@@ -5,6 +5,7 @@ import struct
 import json
 import cv2
 import numpy as np
+import zmq
 
 
 def main():
@@ -19,8 +20,11 @@ def main():
     # Server socket
     # create an INET, STREAMing socket
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    host_name = socket.gethostname()
-    host_ip = socket.gethostbyname(host_name)
+    # host_name = socket.gethostname()
+    # host_ip = socket.gethostbyname(host_name)
+
+    host_ip = '0.0.0.0'
+
     print('HOST IP:', host_ip)
 
     port = 10050
@@ -50,7 +54,10 @@ def main():
 
                 message = struct.pack("Q", len(a))+a
 
-                client_socket.sendall(message)
+                try:
+                    client_socket.sendall(message)
+                except:
+                    break
 
                 rect = ((ox*frame.shape[1], oy*frame.shape[0]),
                         (w*frame.shape[1], h*frame.shape[0]), 360-alpha)
@@ -79,5 +86,52 @@ def main():
                     client_socket.close()
 
 
+def main_zmq():
+    # get configuration data
+    json_data = json.load(open('rcrop_parameters.json'))
+
+    alpha = json_data["alpha"]
+    ox = json_data["ox"]
+    oy = json_data["oy"]
+    h = json_data["height"]
+    w = json_data["width"]
+
+    # create a zmq context that can create sockets
+    context = zmq.Context()
+    # create a socket of type PUB
+    footage_socket = context.socket(zmq.PUB)
+    # connect the socket to the localhost on port 10050
+    host_ip = 'localhost'
+    port = 10050
+    footage_socket.connect('tcp://' + str(host_ip) + ":" + str(port))
+
+    # create the camera object
+    camera = cv2.VideoCapture(0)
+
+    while True:
+        try:
+            # grab the current frame
+            (_, frame) = camera.read()
+            # encode the image to jpg
+            _, buffer = cv2.imencode('.jpg', frame)
+            # serialize the jpg to pickle obj
+            buffer = pickle.dumps(buffer)
+
+            # send the encoded pickled object on socket
+            try:
+                footage_socket.send_pyobj(buffer)
+            except:
+                break
+
+            cv2.imshow("Sending...", frame)
+
+        except KeyboardInterrupt:
+            footage_socket.close()
+            camera.release()
+            cv2.destroyAllWindows()
+            break
+
+
 if __name__ == "__main__":
-    main()
+    # main()
+    main_zmq()

@@ -4,6 +4,7 @@ import struct
 import json
 import cv2
 import numpy as np
+import zmq
 
 
 def crop_video(image, w, h, border_points, image_tilt):
@@ -165,7 +166,7 @@ def main():
     # create an INET, STREAMing socket :
     client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     # Standard loopback interface address (localhost)
-    host_ip = '192.168.136.1'
+    host_ip = 'localhost'
     port = 10050  # Port to listen on (non-privileged ports are > 1023)
 
     # now connect to the web server on the specified port number
@@ -217,5 +218,52 @@ def main():
     client_socket.close()
 
 
+def main_zmq():
+    img_shape = []
+    img_tilt = ""
+    initialization_passed = False
+    border_points = dict()
+
+    json_data = json.load(open('rcrop_parameters.json'))
+
+    context = zmq.Context()
+    footage_socket = context.socket(zmq.SUB)
+    host_ip = '*'
+    port = 10050
+    footage_socket.bind('tcp://' + str(host_ip) + ":" + str(port))
+    footage_socket.setsockopt_string(zmq.SUBSCRIBE, str(''))
+
+    while True:
+        try:
+            # get the frame from the socket
+            frame = footage_socket.recv_pyobj()
+            # unpickle it
+            frame = pickle.loads(frame)
+            # decode the frame
+            frame = cv2.imdecode(frame, 1)
+
+            # in the initialization phase the image dimensions are stored,
+            # the tilt of the image and the crop is corrected if it is outbounded
+            if initialization_passed == False:
+                img_shape = frame.shape
+                img_tilt = find_image_tilt(json_data, img_shape)
+                border_points = find_border_points(
+                    json_data, img_shape, img_tilt)
+                initialization_passed = True
+
+            # crop the image according to the border_point and the image tilt
+            image = crop_video(frame, json_data["width"],
+                               json_data["height"], border_points, img_tilt)
+
+            cv2.imshow("Receiving...", image)
+            cv2.waitKey(1)
+
+        except KeyboardInterrupt:
+            footage_socket.close()
+            cv2.destroyAllWindows()
+            break
+
+
 if __name__ == "__main__":
-    main()
+    # main()
+    main_zmq()
