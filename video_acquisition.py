@@ -124,6 +124,7 @@ def main_zmq():
                 break
 
             cv2.imshow("Sending...", frame)
+            cv2.waitKey(1)
 
         except KeyboardInterrupt:
             footage_socket.close()
